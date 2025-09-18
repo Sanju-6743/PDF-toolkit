@@ -61,6 +61,11 @@ function connectToServer() {
     socket = io(window.SOCKET_URL, { transports: ['websocket', 'polling'] });
     socket.on('connect', function() {
         console.log('Connected to backend socket');
+        showConnectionStatus(true);
+    });
+    socket.on('connect_error', function(err) {
+        console.error('Connection to backend failed:', err);
+        showConnectionStatus(false);
     });
     setupSocketListeners();
 }
@@ -395,6 +400,29 @@ function updateStatus(message) {
     }
 }
 
+// Show connection status popup
+function showConnectionStatus(success) {
+    const statusPopup = document.createElement('div');
+    statusPopup.className = 'connection-status-popup';
+    if (success) {
+        statusPopup.textContent = '✅ Connected to backend';
+        statusPopup.classList.add('success');
+    } else {
+        statusPopup.textContent = '❌ Failed to connect to backend';
+        statusPopup.classList.add('error');
+    }
+    
+    document.body.appendChild(statusPopup);
+    
+    // Fade out after a few seconds
+    setTimeout(() => {
+        statusPopup.style.opacity = '0';
+        setTimeout(() => {
+            document.body.removeChild(statusPopup);
+        }, 500);
+    }, 3000);
+}
+
 // Add CSS for modal and file upload area
 const modalStyles = `
 .modal {
@@ -447,6 +475,28 @@ const modalStyles = `
 .file-upload-area.drag-over {
     background-color: #e0f7fa;
     border-color: #3a0ca3;
+}
+
+/* Connection Status Popup */
+.connection-status-popup {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: bold;
+    z-index: 2000;
+    opacity: 1;
+    transition: opacity 0.5s ease-in-out;
+}
+
+.connection-status-popup.success {
+    background-color: #28a745;
+}
+
+.connection-status-popup.error {
+    background-color: #dc3545;
 }
 
 .upload-icon {

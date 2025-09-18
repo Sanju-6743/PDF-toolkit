@@ -1,0 +1,12 @@
+# Node/JS (not used but common)
+node_modules/
+
+# Build artifacts
+.dist/
+.build/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+*.log

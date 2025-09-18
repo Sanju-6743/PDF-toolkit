@@ -1,614 +1,194 @@
-// PDF Toolkit - Client-side PDF Processing with Python Backend
-// Using PDF.js, PDF-lib, and Socket.IO for real-time processing
+document.addEventListener('DOMContentLoaded', () => {
+    const tools = [
+        { id: 'merge', name: 'Merge PDF', icon: 'fas fa-compress-arrows-alt', description: 'Combine multiple PDFs into one file.', multiFile: true },
+        { id: 'split', name: 'Split PDF', icon: 'fas fa-cut', description: 'Extract pages or ranges from a PDF.', options: [{ id: 'ranges', placeholder: 'e.g., 1-3, 5, 8-10' }] },
+        { id: 'pdf-to-jpg', name: 'PDF to JPG', icon: 'fas fa-image', description: 'Convert each page of a PDF to a JPG image.' },
+        { id: 'images-to-pdf', name: 'Images to PDF', icon: 'fas fa-file-image', description: 'Combine multiple images into a single PDF.', multiFile: true, accept: 'image/*' },
+        { id: 'protect', name: 'Protect PDF', icon: 'fas fa-lock', description: 'Add a password to protect your PDF.', options: [{ id: 'password', placeholder: 'Enter password', type: 'password' }] },
+        { id: 'add-watermark', name: 'Add Watermark', icon: 'fas fa-stamp', description: 'Add a text watermark to your PDF.', options: [{ id: 'watermark_text', placeholder: 'Enter watermark text' }] }
+    ];
 
-// Global variables
-let uploadedFiles = [];
-let processedPdf = null;
-let pdfjsLib = null;
-let socket = null;
-
-// DOM Elements
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize the application
-    initializeApp();
-    
-    // Set up event listeners
-    setupEventListeners();
-});
-
-// Initialize the application
-function initializeApp() {
-    console.log('PDF Toolkit initialized');
-    
-    // Load necessary libraries
-    loadLibraries();
-}
-
-// Load required libraries
-function loadLibraries() {
-    // Create script element for PDF.js
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
-    script.onload = function() {
-        // Set up PDF.js worker
-        pdfjsLib = window['pdfjs-dist/build/pdf'];
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-        console.log('PDF.js library loaded');
-    };
-    document.head.appendChild(script);
-    
-    // Create script element for PDF-lib (for PDF manipulation)
-    const pdfLibScript = document.createElement('script');
-    pdfLibScript.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
-    pdfLibScript.onload = function() {
-        console.log('PDF-lib library loaded');
-    };
-    document.head.appendChild(pdfLibScript);
-    
-    // Create script element for Socket.IO
-    const socketScript = document.createElement('script');
-    socketScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js';
-    socketScript.onload = function() {
-        console.log('Socket.IO library loaded');
-        connectToServer();
-    };
-    document.head.appendChild(socketScript);
-}
-
-// Connect to WebSocket server
-function connectToServer() {
-    // Connect to backend Socket.IO server hosted separately (Render)
-    socket = io(window.SOCKET_URL, { transports: ['websocket', 'polling'] });
-    socket.on('connect', function() {
-        console.log('Connected to backend socket');
-        showConnectionStatus(true);
-    });
-    socket.on('connect_error', function(err) {
-        console.error('Connection to backend failed:', err);
-        showConnectionStatus(false);
-    });
-    setupSocketListeners();
-}
-
-// Setup socket event listeners
-function setupSocketListeners() {
-    socket.on('processing_status', function(data) {
-        updateStatus(`⏳ ${data.status}`);
+    const toolsGrid = document.querySelector('.tools-grid');
+    tools.forEach(tool => {
+        const card = document.createElement('div');
+        card.className = 'tool-card';
+        card.dataset.tool = tool.id;
+        card.innerHTML = `
+            <i class="${tool.icon}"></i>
+            <h3>${tool.name}</h3>
+            <p>${tool.description}</p>
+        `;
+        card.addEventListener('click', () => openModal(tool));
+        toolsGrid.appendChild(card);
     });
 
-    socket.on('processing_complete', function(data) {
-        updateStatus(`✅ ${data.status}`);
-        playSound('complete');
-        document.getElementById('resultArea').style.display = 'block';
-        document.getElementById('processingStatus').style.display = 'none';
-    });
-
-    socket.on('processing_error', function(data) {
-        updateStatus(`❌ ${data.status}`);
-        playSound('error');
-    });
-}
-
-// Set up event listeners
-function setupEventListeners() {
-    // Feature card buttons
-    const featureButtons = document.querySelectorAll('.feature-card .btn-secondary');
-    featureButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const featureName = this.parentElement.querySelector('h3').textContent;
-            openFeatureModal(featureName);
-        });
-    });
-    
-    // Hero buttons
-    const heroButtons = document.querySelectorAll('.hero-buttons .btn-primary, .hero-buttons .btn-secondary');
-    heroButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            openFeatureModal('Merge PDF');
-        });
-    });
-    
-    // Navigation links
-    const navLinks = document.querySelectorAll('nav a');
-    navLinks.forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const targetId = this.getAttribute('href').substring(1);
-            scrollToSection(targetId);
-        });
-    });
-}
-
-// Open feature modal
-function openFeatureModal(featureName) {
-    // Create modal dynamically
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.innerHTML = `
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>${featureName}</h2>
-            <div class="file-upload-area">
-                <div class="upload-icon">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                </div>
-                <p>Drag & drop your PDF files here</p>
-                <p>or</p>
-                <button class="btn-primary">Browse Files</button>
-                <input type="file" id="fileInput" multiple accept=".pdf" style="display: none;">
-            </div>
-            <div class="file-list" id="fileList"></div>
-            <div class="processing-options" id="processingOptions" style="display: none;">
-                <button class="btn-primary" id="processBtn">Process Files</button>
-            </div>
-            <div class="processing-status" id="processingStatus" style="display: none;">
-                <div class="spinner"></div>
-                <p id="statusText">Processing...</p>
-            </div>
-            <div class="result-area" id="resultArea" style="display: none;">
-                <h3>Processing Complete!</h3>
-                <p>Your file is ready for download</p>
-                <button class="btn-primary" id="downloadBtn">Download Result</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    // Add event listeners to modal elements
-    const closeBtn = modal.querySelector('.close');
-    closeBtn.addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-    
-    const uploadBtn = modal.querySelector('.file-upload-area .btn-primary');
-    const fileInput = modal.querySelector('#fileInput');
-    uploadBtn.addEventListener('click', () => {
-        fileInput.click();
-    });
-    
-    fileInput.addEventListener('change', handleFileSelect);
-    
-    // Drag and drop functionality
-    const uploadArea = modal.querySelector('.file-upload-area');
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('drag-over');
-    });
-    
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('drag-over');
-    });
-    
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('drag-over');
-        handleFileSelect(e);
-    });
-    
-    // Process button
-    const processBtn = modal.querySelector('#processBtn');
-    processBtn.addEventListener('click', function() {
-        processFiles(featureName);
-    });
-    
-    // Download button
-    const downloadBtn = modal.querySelector('#downloadBtn');
-    downloadBtn.addEventListener('click', downloadResult);
-}
-
-// Handle file selection
-function handleFileSelect(e) {
-    let files;
-    
-    if (e.type === 'drop') {
-        files = e.dataTransfer.files;
-    } else {
-        files = e.target.files;
-    }
-    
-    // Process selected files
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.type === 'application/pdf') {
-            uploadedFiles.push(file);
-            displayFile(file);
-        }
-    }
-    
-    // Show processing options if files are uploaded
-    if (uploadedFiles.length > 0) {
-        document.getElementById('processingOptions').style.display = 'block';
-    }
-}
-
-// Display uploaded file
-function displayFile(file) {
+    const modal = document.getElementById('toolModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const fileInput = document.getElementById('fileInput');
+    const uploadArea = document.querySelector('.upload-area');
     const fileList = document.getElementById('fileList');
-    const fileElement = document.createElement('div');
-    fileElement.className = 'file-item';
-    fileElement.innerHTML = `
-        <span><i class="fas fa-file-pdf"></i> ${file.name}</span>
-        <span class="file-size">${formatFileSize(file.size)}</span>
-        <button class="remove-file" data-filename="${file.name}">&times;</button>
-    `;
+    const toolOptions = document.getElementById('toolOptions');
+    const processBtn = document.getElementById('processBtn');
+    const progressWrapper = document.getElementById('progressWrapper');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
     
-    fileList.appendChild(fileElement);
-    
-    // Add event listener to remove button
-    const removeBtn = fileElement.querySelector('.remove-file');
-    removeBtn.addEventListener('click', function() {
-        removeFile(file.name);
-        fileList.removeChild(fileElement);
-    });
-}
+    let currentTool = null;
+    let uploadedFiles = [];
+    let socket = null;
 
-// Remove file from list
-function removeFile(filename) {
-    uploadedFiles = uploadedFiles.filter(file => file.name !== filename);
-    
-    // Hide processing options if no files left
-    if (uploadedFiles.length === 0) {
-        document.getElementById('processingOptions').style.display = 'none';
-    }
-}
+    function connectToServer() {
+        if (socket && socket.connected) return;
+        socket = io(window.SOCKET_URL, { transports: ['websocket', 'polling'] });
 
-// Format file size
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+        socket.on('connect', () => {
+            console.log('Connected to backend with SID:', socket.id);
+        });
 
-// Process files based on selected feature
-async function processFiles(featureName) {
-    document.getElementById('processingOptions').style.display = 'none';
-    document.getElementById('processingStatus').style.display = 'block';
-    document.getElementById('fileList').style.display = 'none';
-
-    playSound('processing');
-
-    const formData = new FormData();
-    uploadedFiles.forEach(file => {
-        formData.append('files', file);
-    });
-
-    let url = '';
-    switch (featureName) {
-        case 'Merge PDF':
-            // Append all files as 'files'
-            formData.delete('file');
-            url = `${window.API_BASE_URL}/merge`;
-            break;
-        case 'Split PDF':
-            // Backend expects single 'file' and optional 'split_page'
-            const firstSplit = uploadedFiles[0];
-            formData.delete('files');
-            formData.set('file', firstSplit);
-            // default split page is 1; could be enhanced via UI control
-            formData.set('split_page', '1');
-            url = `${window.API_BASE_URL}/split`;
-            break;
-        case 'Compress PDF':
-            // Backend expects single 'file'
-            const firstCompress = uploadedFiles[0];
-            formData.delete('files');
-            formData.set('file', firstCompress);
-            url = `${window.API_BASE_URL}/compress`;
-            break;
-        default:
-            return;
-    }
-
-    fetch(url, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            processedPdf = { name: data.filename || 'processed.pdf' };
-            socket.emit('processing_complete', { status: 'Processing complete!' });
-        } else {
-            socket.emit('processing_error', { status: data.message });
-        }
-    })
-    .catch(error => {
-        socket.emit('processing_error', { status: error.message });
-    });
-}
-
-// Download result
-function downloadResult() {
-    if (processedPdf && processedPdf.name) {
-        window.location.href = `${window.API_BASE_URL}/download/${processedPdf.name}`;
-    } else {
-        alert('No processed file available for download.');
-    }
-}
-
-// Scroll to section
-function scrollToSection(sectionId) {
-    const section = document.getElementById(sectionId);
-    if (section) {
-        window.scrollTo({
-            top: section.offsetTop - 80,
-            behavior: 'smooth'
+        socket.on('processing_progress', (data) => {
+            progressBar.style.width = `${data.percent}%`;
+            progressText.textContent = data.message;
         });
     }
-}
 
-// Play sound notifications
-function playSound(type) {
-    // In a real implementation, we would play actual sounds
-    // For this demo, we'll just log the sound events
-    console.log(`Playing ${type} sound`);
-    
-    // Create audio context for actual sound implementation
-    // This is commented out for the demo but shows how it would work:
-    /*
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+    function openModal(tool) {
+        currentTool = tool;
+        modalTitle.textContent = tool.name;
+        fileInput.multiple = !!tool.multiFile;
+        fileInput.accept = tool.accept || '.pdf';
         
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        switch(type) {
-            case 'processing':
-                oscillator.frequency.value = 800;
-                gainNode.gain.value = 0.1;
-                oscillator.type = 'sine';
-                break;
-            case 'complete':
-                oscillator.frequency.value = 1000;
-                gainNode.gain.value = 0.3;
-                oscillator.type = 'sine';
-                break;
-            case 'error':
-                oscillator.frequency.value = 200;
-                gainNode.gain.value = 0.3;
-                oscillator.type = 'square';
-                break;
-            case 'download':
-                oscillator.frequency.value = 1200;
-                gainNode.gain.value = 0.2;
-                oscillator.type = 'sine';
-                break;
+        toolOptions.innerHTML = '';
+        if (tool.options) {
+            tool.options.forEach(opt => {
+                toolOptions.innerHTML += `<input type="${opt.type || 'text'}" id="${opt.id}" placeholder="${opt.placeholder}" class="tool-option-input">`;
+            });
         }
         
-        oscillator.start();
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
-        setTimeout(() => {
-            oscillator.stop();
-        }, 500);
-    } catch (e) {
-        console.log('Sound playback not supported');
+        resetModalState();
+        modal.style.display = 'flex';
+        connectToServer();
     }
-    */
-}
 
-
-// Update processing status
-function updateStatus(message) {
-    const statusText = document.getElementById('statusText');
-    if (statusText) {
-        statusText.textContent = message;
+    function closeModal() {
+        modal.style.display = 'none';
+        currentTool = null;
     }
-}
 
-// Show connection status popup
-function showConnectionStatus(success) {
-    const statusPopup = document.createElement('div');
-    statusPopup.className = 'connection-status-popup';
-    if (success) {
-        statusPopup.textContent = '✅ Connected to backend';
-        statusPopup.classList.add('success');
-    } else {
-        statusPopup.textContent = '❌ Failed to connect to backend';
-        statusPopup.classList.add('error');
+    function resetModalState() {
+        uploadedFiles = [];
+        fileList.innerHTML = '';
+        processBtn.disabled = true;
+        progressWrapper.style.display = 'none';
+        progressBar.style.width = '0%';
+        fileInput.value = '';
     }
-    
-    document.body.appendChild(statusPopup);
-    
-    // Fade out after a few seconds
-    setTimeout(() => {
-        statusPopup.style.opacity = '0';
-        setTimeout(() => {
-            document.body.removeChild(statusPopup);
-        }, 500);
-    }, 3000);
-}
 
-// Add CSS for modal and file upload area
-const modalStyles = `
-.modal {
-    display: block;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.5);
-    overflow: auto;
-}
-
-.modal-content {
-    background-color: #fff;
-    margin: 5% auto;
-    padding: 30px;
-    border-radius: 15px;
-    width: 80%;
-    max-width: 600px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-    position: relative;
-}
-
-.close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-    position: absolute;
-    top: 15px;
-    right: 25px;
-}
-
-.close:hover {
-    color: #000;
-}
-
-.file-upload-area {
-    border: 2px dashed #4361ee;
-    border-radius: 10px;
-    padding: 30px;
-    text-align: center;
-    margin: 20px 0;
-    transition: all 0.3s ease;
-}
-
-.file-upload-area.drag-over {
-    background-color: #e0f7fa;
-    border-color: #3a0ca3;
-}
-
-/* Connection Status Popup */
-.connection-status-popup {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    padding: 15px 20px;
-    border-radius: 8px;
-    color: #fff;
-    font-weight: bold;
-    z-index: 2000;
-    opacity: 1;
-    transition: opacity 0.5s ease-in-out;
-}
-
-.connection-status-popup.success {
-    background-color: #28a745;
-}
-
-.connection-status-popup.error {
-    background-color: #dc3545;
-}
-
-.upload-icon {
-    font-size: 48px;
-    color: #4361ee;
-    margin-bottom: 15px;
-}
-
-.file-list {
-    margin: 20px 0;
-}
-
-.file-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px;
-    background-color: #f8f9fa;
-    border-radius: 5px;
-    margin-bottom: 10px;
-    position: relative;
-}
-
-.file-size {
-    color: #6c757d;
-    font-size: 0.9rem;
-}
-
-.remove-file {
-    background: none;
-    border: none;
-    color: #dc3545;
-    font-size: 1.5rem;
-    cursor: pointer;
-}
-
-.processing-options, .result-area {
-    text-align: center;
-    margin: 20px 0;
-}
-
-.result-area h3 {
-    color: #28a745;
-}
-
-/* Processing status */
-.processing-status {
-    text-align: center;
-    padding: 20px;
-}
-
-.spinner {
-    border: 4px solid rgba(0, 0, 0, 0.1);
-    border-left-color: #4361ee;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 20px;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Responsive adjustments for modal */
-@media (max-width: 768px) {
-    .modal-content {
-        width: 95%;
-        padding: 20px;
+    function handleFiles(files) {
+        if (!currentTool.multiFile) uploadedFiles = [];
+        
+        for (const file of files) {
+            uploadedFiles.push(file);
+        }
+        renderFileList();
+        validateInputs();
     }
-    
-    .file-item {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    
-    .file-size {
-        margin-top: 5px;
-    }
-    
-    .remove-file {
-        position: absolute;
-        right: 10px;
-        top: 10px;
-    }
-}
-`;
 
-// Add styles to document
-const styleSheet = document.createElement('style');
-styleSheet.innerText = modalStyles;
-document.head.appendChild(styleSheet);
+    function renderFileList() {
+        fileList.innerHTML = '';
+        uploadedFiles.forEach((file, index) => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `<span>${file.name}</span><button data-index="${index}">&times;</button>`;
+            fileList.appendChild(item);
+        });
+    }
 
-// Performance optimization: Lazy load images
-document.addEventListener('DOMContentLoaded', function() {
-    const lazyImages = [].slice.call(document.querySelectorAll('img.lazy'));
-    
-    if ('IntersectionObserver' in window) {
-        let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
-            entries.forEach(function(entry) {
-                if (entry.isIntersecting) {
-                    let lazyImage = entry.target;
-                    lazyImage.src = lazyImage.dataset.src;
-                    lazyImage.classList.remove('lazy');
-                    lazyImageObserver.unobserve(lazyImage);
+    function validateInputs() {
+        let optionsValid = true;
+        if (currentTool.options) {
+            optionsValid = currentTool.options.every(opt => document.getElementById(opt.id).value.trim() !== '');
+        }
+        processBtn.disabled = uploadedFiles.length === 0 || !optionsValid;
+    }
+
+    async function processFiles() {
+        progressWrapper.style.display = 'block';
+        progressText.textContent = 'Preparing upload...';
+        progressBar.style.width = '0%';
+
+        const formData = new FormData();
+        const fileKey = currentTool.multiFile ? 'files' : 'file';
+        uploadedFiles.forEach(file => formData.append(fileKey, file));
+
+        if (currentTool.options) {
+            currentTool.options.forEach(opt => {
+                formData.append(opt.id, document.getElementById(opt.id).value);
+            });
+        }
+
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/${currentTool.id}`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-SocketIO-SID': socket.id
                 }
             });
-        });
-        
-        lazyImages.forEach(function(lazyImage) {
-            lazyImageObserver.observe(lazyImage);
-        });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Processing failed');
+            }
+
+            progressText.textContent = 'Download starting...';
+            progressBar.style.width = '100%';
+
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const contentDisposition = response.headers.get('content-disposition');
+            let filename = 'download';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                if (filenameMatch.length > 1) {
+                    filename = filenameMatch[1];
+                }
+            }
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+
+            setTimeout(closeModal, 1000);
+
+        } catch (error) {
+            progressText.textContent = `Error: ${error.message}`;
+            progressBar.style.backgroundColor = 'red';
+        }
     }
+
+    // Event Listeners
+    modal.querySelector('.close-btn').addEventListener('click', closeModal);
+    uploadArea.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+    
+    uploadArea.addEventListener('dragover', (e) => e.preventDefault());
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        handleFiles(e.dataTransfer.files);
+    });
+
+    fileList.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') {
+            const index = parseInt(e.target.dataset.index, 10);
+            uploadedFiles.splice(index, 1);
+            renderFileList();
+            validateInputs();
+        }
+    });
+
+    toolOptions.addEventListener('input', validateInputs);
+    processBtn.addEventListener('click', processFiles);
 });
